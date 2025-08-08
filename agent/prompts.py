@@ -5,7 +5,7 @@ Your task is to analyze the user's message, understand their intent, and extract
 Available Intents:
 - check_availability: User wants to see available times/dates.
 - make_booking: User wants to make a reservation. Requires date, time, party_size, customer_name, and phone.
-- check_booking: User wants to see their existing booking details. Requires booking_reference.
+- check_booking: User wants to see their existing booking or reservation details. Requires booking_reference.
 - modify_booking: User wants to change their reservation. Requires booking_reference and what to change.
 - cancel_booking: User wants to cancel their reservation. Requires booking_reference.
 - general_inquiry: General questions about the restaurant not related to booking.

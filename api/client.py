@@ -1,3 +1,5 @@
+# Path: api/client.py
+
 import os
 import requests
 from typing import Dict, Any, Optional
@@ -36,12 +38,18 @@ class BookingAPIClient:
         payload = {"VisitDate": visit_date, "PartySize": party_size, "ChannelCode": "ONLINE"}
         return self._make_request("POST", "/AvailabilitySearch", data=payload)
 
+    # --- THIS FUNCTION IS CORRECTED ---
     def create_booking(self, visit_date: str, visit_time: str, party_size: int, first_name: str, surname: str, email: str, mobile: str) -> Dict[str, Any]:
         print(f"--- Calling API: create_booking ---")
         payload = {
-            "VisitDate": visit_date, "VisitTime": visit_time, "PartySize": party_size,
-            "ChannelCode": "ONLINE", "Customer[FirstName]": first_name,
-            "Customer[Surname]": surname, "Customer[Email]": email, "Customer[Mobile]": mobile
+            "VisitDate": visit_date, 
+            "VisitTime": visit_time, 
+            "PartySize": party_size,
+            "ChannelCode": "ONLINE", 
+            "Customer[FirstName]": first_name,
+            "Customer[Surname]": surname, 
+            "Customer[Email]": email, 
+            "Customer[Mobile]": mobile
         }
         return self._make_request("POST", "/BookingWithStripeToken", data=payload)
 
@@ -64,34 +72,3 @@ class BookingAPIClient:
             "cancellationReasonId": 1
         }
         return self._make_request("POST", f"/Booking/{booking_reference}/Cancel", data=payload)
-
-#### **`utils/parsers.py`**
-
-from datetime import datetime, timedelta
-
-def parse_natural_date(date_str: str) -> str:
-    """
-    Parses a natural language date string into 'YYYY-MM-DD' format.
-    A simple implementation for demonstration.
-    """
-    if not date_str:
-        return ""
-    
-    date_str = date_str.lower()
-    today = datetime.now().date()
-    
-    if "today" in date_str:
-        return today.strftime('%Y-%m-%d')
-    if "tomorrow" in date_str:
-        return (today + timedelta(days=1)).strftime('%Y-%m-%d')
-    if "next friday" in date_str:
-        days_ahead = 4 - today.weekday()
-        if days_ahead <= 0: days_ahead += 7
-        return (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
-    
-    # Basic check for YYYY-MM-DD format
-    try:
-        datetime.strptime(date_str, '%Y-%m-%d')
-        return date_str
-    except ValueError:
-        return "" # Indicate parsing failed
