@@ -28,6 +28,20 @@ class AgentState:
         self.clarification_message = ""
         self.parameters = {}
         
+    def clear_booking_context(self):
+        """Clear booking context when starting a new booking process."""
+        # Only clear if we're not in the middle of an operation
+        if not self.needs_clarification:
+            self.booking_context = {}
+            print("Booking context cleared")
+    
+    def preserve_booking_reference(self):
+        """Preserve only the booking reference when clearing context."""
+        if self.booking_context.get('booking_reference'):
+            booking_ref = self.booking_context['booking_reference']
+            self.booking_context = {'booking_reference': booking_ref}
+            print(f"Preserved booking reference: {booking_ref}")
+        
     def add_to_history(self, role: str, content: str):
         """Helper method to add messages to conversation history."""
         self.conversation_history.append({"role": role, "content": content})
@@ -39,3 +53,29 @@ class AgentState:
     def get_context_summary(self) -> str:
         """Get a summary of current booking context for debugging."""
         return f"Current context: {self.booking_context}"
+    
+    def has_active_booking(self) -> bool:
+        """Check if there's an active booking reference in context."""
+        return bool(self.booking_context.get('booking_reference'))
+    
+    def is_booking_complete(self) -> bool:
+        """Check if a booking has all required information."""
+        required_fields = ["date", "time", "party_size", "customer_name", "phone"]
+        return all(self.booking_context.get(field) for field in required_fields)
+    
+    def get_missing_booking_fields(self) -> List[str]:
+        """Get list of missing required booking fields."""
+        required_fields = {
+            "date": "date",
+            "time": "time", 
+            "party_size": "number of people",
+            "customer_name": "your name",
+            "phone": "phone number"
+        }
+        
+        missing = []
+        for field, description in required_fields.items():
+            if not self.booking_context.get(field):
+                missing.append(description)
+        
+        return missing

@@ -42,7 +42,6 @@ def classify_intent(state: AgentState) -> AgentState:
         context_str += f"{msg['role'].title()}: {msg['content']}\n"
     
     # Check if we're continuing an existing booking conversation
-    # FIXED: Only consider it continuing if we're actually in a booking flow AND user isn't asking for something else
     continuing_booking = bool(
         state.booking_context and 
         any(state.booking_context.values()) and
@@ -51,7 +50,17 @@ def classify_intent(state: AgentState) -> AgentState:
                               'available', 'availability', 'check availability', 'what times'])
     )
     
+    # FIXED: Check for existing booking queries
+    has_existing_booking = bool(state.booking_context.get('booking_reference'))
+    user_msg_lower = state.user_message.lower()
+    asking_about_existing = any(phrase in user_msg_lower for phrase in [
+        'my reservation', 'my booking', 'what time is my', 'when is my',
+        'my table', 'reservation time', 'booking time'
+    ])
+    
     print(f"Continuing booking: {continuing_booking}")
+    print(f"Has existing booking: {has_existing_booking}")
+    print(f"Asking about existing: {asking_about_existing}")
     print(f"Current booking context: {state.booking_context}")
     
     prompt = INTENT_CLASSIFICATION_PROMPT.format(
@@ -67,47 +76,74 @@ def classify_intent(state: AgentState) -> AgentState:
         parsed_response = extract_json(response_text)
         
         if parsed_response:
-            # FIXED: Let the LLM's intent classification take precedence
-            # Only override if we're truly continuing a booking AND the intent makes sense in that context
             llm_intent = parsed_response.get("intent", "general_inquiry")
             
-            if continuing_booking and llm_intent in ['make_booking', 'general_inquiry']:
+            # FIXED: Override logic for existing booking queries
+            if has_existing_booking and asking_about_existing:
+                # User is asking about their existing booking
+                state.intent = "check_booking"
+                # Set the booking reference as a parameter
+                state.parameters = {"booking_reference": state.booking_context.get('booking_reference')}
+                print(f"Override: User asking about existing booking {state.booking_context.get('booking_reference')}")
+            elif continuing_booking and llm_intent in ['make_booking', 'general_inquiry']:
                 # Only keep make_booking if the LLM also thinks it's booking-related
                 state.intent = "make_booking"
+                # Extract parameters normally
+                raw_params = parsed_response.get("parameters", {})
+                state.parameters = {}
+                
+                for key, value in raw_params.items():
+                    if value is not None and str(value).strip() not in ["", "null", "None"]:
+                        if key == "party_size":
+                            try:
+                                number_words = {
+                                    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                                    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+                                }
+                                value_str = str(value).lower().strip()
+                                if value_str in number_words:
+                                    state.parameters[key] = number_words[value_str]
+                                else:
+                                    number_match = re.search(r'\d+', str(value))
+                                    if number_match:
+                                        state.parameters[key] = int(number_match.group())
+                                    else:
+                                        state.parameters[key] = int(value)
+                            except (ValueError, TypeError):
+                                print(f"Could not parse party_size: {value}")
+                                continue
+                        else:
+                            state.parameters[key] = str(value).strip()
             else:
                 # Trust the LLM's classification for all other cases
                 state.intent = llm_intent
-            
-            # Clean and validate parameters
-            raw_params = parsed_response.get("parameters", {})
-            state.parameters = {}
-            
-            # Extract and validate each parameter
-            for key, value in raw_params.items():
-                if value is not None and str(value).strip() not in ["", "null", "None"]:
-                    # Special handling for party_size - convert to int
-                    if key == "party_size":
-                        try:
-                            # Handle written numbers
-                            number_words = {
-                                'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-                                'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
-                            }
-                            value_str = str(value).lower().strip()
-                            if value_str in number_words:
-                                state.parameters[key] = number_words[value_str]
-                            else:
-                                # Try to extract number from text like "for 4 people" or "4"
-                                number_match = re.search(r'\d+', str(value))
-                                if number_match:
-                                    state.parameters[key] = int(number_match.group())
+                
+                # Extract parameters normally
+                raw_params = parsed_response.get("parameters", {})
+                state.parameters = {}
+                
+                for key, value in raw_params.items():
+                    if value is not None and str(value).strip() not in ["", "null", "None"]:
+                        if key == "party_size":
+                            try:
+                                number_words = {
+                                    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                                    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+                                }
+                                value_str = str(value).lower().strip()
+                                if value_str in number_words:
+                                    state.parameters[key] = number_words[value_str]
                                 else:
-                                    state.parameters[key] = int(value)
-                        except (ValueError, TypeError):
-                            print(f"Could not parse party_size: {value}")
-                            continue  # Skip invalid party sizes
-                    else:
-                        state.parameters[key] = str(value).strip()
+                                    number_match = re.search(r'\d+', str(value))
+                                    if number_match:
+                                        state.parameters[key] = int(number_match.group())
+                                    else:
+                                        state.parameters[key] = int(value)
+                            except (ValueError, TypeError):
+                                print(f"Could not parse party_size: {value}")
+                                continue
+                        else:
+                            state.parameters[key] = str(value).strip()
             
             state.needs_clarification = parsed_response.get("needs_clarification", False)
             state.clarification_message = parsed_response.get("clarification_message", "")
@@ -116,11 +152,11 @@ def classify_intent(state: AgentState) -> AgentState:
             print(f"Extracted parameters: {state.parameters}")
         else:
             print("Failed to parse JSON response, using fallback")
-            # FIXED: For fallback, don't assume continuing booking
-            # Try to determine intent from keywords in the user message
-            user_msg_lower = state.user_message.lower()
-            
-            if any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
+            # FIXED: Better fallback logic
+            if has_existing_booking and asking_about_existing:
+                state.intent = "check_booking"
+                state.parameters = {"booking_reference": state.booking_context.get('booking_reference')}
+            elif any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
                 state.intent = "check_availability"
             elif any(word in user_msg_lower for word in ['book', 'reserve', 'table', 'reservation']) and continuing_booking:
                 state.intent = "make_booking"
@@ -136,10 +172,11 @@ def classify_intent(state: AgentState) -> AgentState:
             
     except Exception as e:
         print(f"Error in intent classification: {e}")
-        # FIXED: Same logic for error handling
-        user_msg_lower = state.user_message.lower()
-        
-        if any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
+        # FIXED: Same fallback logic for errors
+        if has_existing_booking and asking_about_existing:
+            state.intent = "check_booking"
+            state.parameters = {"booking_reference": state.booking_context.get('booking_reference')}
+        elif any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
             state.intent = "check_availability"
         elif continuing_booking:
             state.intent = "make_booking"
@@ -150,7 +187,7 @@ def classify_intent(state: AgentState) -> AgentState:
         state.clarification_message = "I encountered an error processing your request. Could you please try again?"
     
     return state
-    
+
 def process_parameters(state: AgentState) -> AgentState:
     print("--- Node: Process Parameters ---")
     print(f"Current booking context: {state.booking_context}")
@@ -180,12 +217,10 @@ def process_parameters(state: AgentState) -> AgentState:
     # Validate time format if provided
     if state.booking_context.get('time'):
         time_str = str(state.booking_context['time'])
-        # Check if time is in valid format
         time_pattern1 = re.compile(r'^\d{1,2}:\d{2}$')
         time_pattern2 = re.compile(r'^\d{1,2}(am|pm)$', re.IGNORECASE)
         
         if not time_pattern1.match(time_str) and not time_pattern2.match(time_str):
-            # Try to convert common formats
             converted_time = convert_time_format(time_str)
             if converted_time:
                 state.booking_context['time'] = converted_time
@@ -204,7 +239,6 @@ def convert_time_format(time_str: str) -> str:
     """Convert various time formats to HH:MM format."""
     time_str = time_str.lower().strip()
     
-    # Handle formats like "7pm", "7:30pm", "19:30"
     if 'pm' in time_str:
         time_part = time_str.replace('pm', '').strip()
         if ':' in time_part:
@@ -235,7 +269,6 @@ def convert_time_format(time_str: str) -> str:
         except ValueError:
             return ""
     
-    # Handle formats like "7", "7:30" (assume 24-hour if no AM/PM)
     elif ':' in time_str:
         parts = time_str.split(':')
         if len(parts) == 2:
@@ -266,7 +299,6 @@ def check_required_parameters(state: AgentState) -> AgentState:
             missing_params.append("number of people")
     
     elif intent == "make_booking":
-        # Check each required parameter individually
         required_fields = {
             "date": "date",
             "time": "time", 
@@ -289,9 +321,8 @@ def check_required_parameters(state: AgentState) -> AgentState:
     if missing_params:
         state.needs_clarification = True
         if len(missing_params) == 1:
-            state.clarification_message = f"I need your {missing_params[0]} to complete the booking. Could you please provide it?"
+            state.clarification_message = f"I need your {missing_params[0]} to complete the request. Could you please provide it?"
         else:
-            # Only ask for the first missing item to avoid overwhelming the user
             state.clarification_message = f"I need your {missing_params[0]} to continue. Could you please provide it?"
     else:
         print("All required parameters are available!")
@@ -313,12 +344,9 @@ def execute_api_call(state: AgentState) -> AgentState:
             )
         
         elif intent == "make_booking":
-            # Split customer name into first and last name
             full_name = context["customer_name"].strip().split()
             first_name = full_name[0]
             surname = full_name[-1] if len(full_name) > 1 else "Guest"
-            
-            # Generate email (in production, you'd ask for this)
             email = f"{first_name.lower()}.{surname.lower()}@example.com"
             
             state.api_response = api_client.create_booking(
@@ -330,6 +358,13 @@ def execute_api_call(state: AgentState) -> AgentState:
                 email,
                 context["phone"]
             )
+            
+            # FIXED: Store booking reference in context after successful booking
+            if state.api_response.get('status') in [200, 201]:
+                booking_ref = state.api_response.get('data', {}).get('booking_reference')
+                if booking_ref:
+                    state.booking_context['booking_reference'] = booking_ref
+                    print(f"Stored booking reference in context: {booking_ref}")
         
         elif intent == "check_booking":
             state.api_response = api_client.get_booking_details(context["booking_reference"])
@@ -338,7 +373,6 @@ def execute_api_call(state: AgentState) -> AgentState:
             state.api_response = api_client.cancel_booking(context["booking_reference"])
         
         elif intent == "modify_booking":
-            # For modify_booking, we need the booking reference and at least one field to modify
             booking_ref = context["booking_reference"]
             new_date = context.get("new_date")
             new_time = context.get("new_time") 
@@ -369,7 +403,6 @@ def generate_response(state: AgentState) -> AgentState:
     # If we need clarification, return the clarification message
     if state.needs_clarification and state.clarification_message:
         state.agent_response = state.clarification_message
-        # Add this exchange to conversation history
         state.conversation_history.append({"role": "user", "content": state.user_message})
         state.conversation_history.append({"role": "assistant", "content": state.agent_response})
         return state
@@ -383,7 +416,6 @@ def generate_response(state: AgentState) -> AgentState:
             booking_context=json.dumps(state.booking_context, indent=2)
         )
         
-        # Use regular LLM without JSON formatting for natural response
         response_llm = ChatOllama(model="llama3.2")
         state.agent_response = response_llm.invoke(prompt).content
         

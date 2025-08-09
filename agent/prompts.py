@@ -23,22 +23,23 @@ INTENT ANALYSIS RULES:
 
 INTENT DEFINITIONS (in priority order):
 
-1. **check_availability**: User wants to see available times/dates for booking
-   - PRIMARY TRIGGERS: "check availability", "what times are available", "available", "availability", "free tables", "do you have tables", "what's available", "any tables free"
+1. **check_booking**: User wants to see existing booking details
+   - PRIMARY TRIGGERS: "my reservation", "my booking", "what time is my", "when is my", "my table", "reservation time", "booking time", "check my booking"
+   - HIGHEST PRIORITY: If booking_reference exists in context AND user asks about "my" booking/reservation
+   - Needs: booking_reference (will be provided from context)
+
+2. **check_availability**: User wants to see available times/dates for booking
+   - TRIGGERS: "check availability", "what times are available", "available", "availability", "free tables", "do you have tables", "what's available", "any tables free"
    - Even if booking context exists, if user asks about availability, classify as check_availability
    - Needs: date, party_size
 
-2. **cancel_booking**: User wants to cancel a reservation
+3. **cancel_booking**: User wants to cancel a reservation
    - TRIGGERS: "cancel my booking", "cancel reservation", "cancel my table"
    - Needs: booking_reference
 
-3. **modify_booking**: User wants to change an existing reservation
+4. **modify_booking**: User wants to change an existing reservation
    - TRIGGERS: "change my booking", "modify reservation", "reschedule", "update my booking"
    - Needs: booking_reference, plus what to change (new_date, new_time, new_party_size)
-
-4. **check_booking**: User wants to see existing booking details
-   - TRIGGERS: "check my booking", "my reservation", "booking details", with a reference
-   - Needs: booking_reference
 
 5. **make_booking**: User wants to create a new reservation
    - TRIGGERS: "book a table", "make a reservation", "I'd like to book", "reserve a table"
@@ -49,10 +50,11 @@ INTENT DEFINITIONS (in priority order):
    - TRIGGERS: anything not related to specific booking operations
 
 IMPORTANT CLASSIFICATION RULES:
-- If user says "check availability" or similar, ALWAYS classify as check_availability, regardless of booking context
-- If user says "what times are available" or similar, ALWAYS classify as check_availability
-- Only continue make_booking if user is providing missing booking details (name, phone, etc.) without asking about availability
-- Be very specific: "book a table" = make_booking, but "what tables are available" = check_availability
+- **HIGHEST PRIORITY**: If booking_reference exists in context AND user asks about "my reservation/booking", ALWAYS classify as check_booking
+- If user says "check availability" or similar, classify as check_availability, regardless of booking context  
+- If user says "what times are available" or similar, classify as check_availability
+- Only continue make_booking if user is providing missing booking details (name, phone, etc.) without asking about availability or existing bookings
+- Be very specific: "book a table" = make_booking, but "what tables are available" = check_availability, but "what time is my reservation" = check_booking
 
 PARAMETER EXTRACTION RULES:
 - date: Extract dates in any format (today, tomorrow, next Friday, 2024-12-25, etc.)
@@ -69,6 +71,8 @@ EXAMPLES:
 - "Book a table for tomorrow 7pm" → make_booking
 - "My name is John Smith, phone 123-456-7890" (with booking context) → make_booking
 - "Check availability for Saturday" → check_availability (NOT make_booking, even with context)
+- "What time is my reservation?" (with booking_reference in context) → check_booking
+- "When is my booking on Saturday?" (with booking_reference in context) → check_booking
 
 OUTPUT FORMAT (JSON only, no other text):
 {{
