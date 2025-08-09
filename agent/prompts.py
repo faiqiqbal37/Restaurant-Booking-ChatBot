@@ -11,6 +11,14 @@ Current Booking Context (information already gathered):
 
 Current User Message: "{user_message}"
 
+INTENT ANALYSIS RULES:
+
+1. **Context Awareness**: If the user is continuing a previous conversation (booking context exists), their message likely provides missing information for the ongoing operation.
+
+2. **Parameter Extraction**: Extract ALL parameters mentioned, even if they seem to repeat information. The system will merge them appropriately.
+
+3. **Intent Persistence**: If there's an active booking context and the user provides additional information (like name, phone, party size), keep the same intent unless they explicitly change topics.
+
 INTENT DEFINITIONS:
 1. check_availability: User wants to see available times/dates for booking
    - Triggers: "check availability", "what times are available", "do you have tables", "are you open"
@@ -18,6 +26,7 @@ INTENT DEFINITIONS:
 
 2. make_booking: User wants to create a new reservation
    - Triggers: "book a table", "make a reservation", "I'd like to book", "reserve a table"
+   - Also: When continuing a booking and providing missing details
    - Needs: date, time, party_size, customer_name, phone
 
 3. check_booking: User wants to see existing booking details
@@ -38,25 +47,23 @@ INTENT DEFINITIONS:
 PARAMETER EXTRACTION RULES:
 - date: Extract dates in any format (today, tomorrow, next Friday, 2024-12-25, etc.)
 - time: Extract times (7pm, 19:30, 7:30 PM, etc.)
-- party_size: Extract numbers (2, 4 people, party of 6, etc.)
-- customer_name: Extract names when user provides them
-- phone: Extract phone numbers
+- party_size: Extract numbers (2, 4 people, party of 6, "for 4", "4 people", etc.)
+- customer_name: Extract names when user provides them ("my name is John", "I'm Sarah", "for John Smith")
+- phone: Extract phone numbers in any format
 - booking_reference: Extract reference codes/numbers when mentioned
 - For modify_booking: look for new_date, new_time, new_party_size (what they want to change TO)
 
-ANALYSIS APPROACH:
-1. Look at the current message for explicit intent keywords
-2. Consider the conversation context - are they continuing a previous request?
-3. Extract any parameters mentioned in the current message
-4. Determine if you have enough information to fulfill the intent
-5. If missing required information, set needs_clarification=true with a helpful message
+SPECIAL CASES:
+- If booking context exists and user provides info like "for 4 people, my name is John", extract party_size=4, customer_name="John"
+- Numbers can be digits (4) or words (four)
+- Names can be first only ("John") or full ("John Smith")
+- Phone numbers in any format: 123-456-7890, (123) 456-7890, 1234567890
 
 IMPORTANT: 
-- Only extract parameters that are explicitly mentioned in the current message
-- Don't invent or assume values not stated by the user
-- Be conservative - better to ask for clarification than make wrong assumptions
-- Numbers can be written as digits (2, 4) or words (two, four)
-- Booking references are usually alphanumeric codes
+- Extract parameters even if they seem redundant - the system handles duplicates
+- Be liberal in extraction - better to extract too much than too little
+- If continuing a booking conversation, maintain make_booking intent unless explicitly changed
+- Look for ALL parameters in the message, not just missing ones
 
 OUTPUT FORMAT (JSON only, no other text):
 {{

@@ -4,7 +4,7 @@ import json
 import re
 from langchain_community.chat_models import ChatOllama
 from agent.state import AgentState
-from agent.prompts import INTENT_CLASSIFICATION_PROMPT, RESPONSE_GENERATION_PROMPT, PARAMETER_EXTRACTION_PROMPT
+from agent.prompts import INTENT_CLASSIFICATION_PROMPT, RESPONSE_GENERATION_PROMPT
 from api.client import BookingAPIClient
 from utils.parsers import parse_natural_date
 
@@ -41,6 +41,15 @@ def classify_intent(state: AgentState) -> AgentState:
     for msg in state.conversation_history[-4:]:  # Last 4 messages for better context
         context_str += f"{msg['role'].title()}: {msg['content']}\n"
     
+    # Check if we're continuing an existing booking conversation
+    continuing_booking = bool(state.booking_context and 
+                             any(state.booking_context.values()) and
+                             not any(keyword in state.user_message.lower() 
+                                   for keyword in ['cancel', 'check my booking', 'modify', 'change']))
+    
+    print(f"Continuing booking: {continuing_booking}")
+    print(f"Current booking context: {state.booking_context}")
+    
     prompt = INTENT_CLASSIFICATION_PROMPT.format(
         conversation_history=context_str,
         user_message=state.user_message,
@@ -54,7 +63,11 @@ def classify_intent(state: AgentState) -> AgentState:
         parsed_response = extract_json(response_text)
         
         if parsed_response:
-            state.intent = parsed_response.get("intent", "general_inquiry")
+            # If we're continuing a booking, maintain the make_booking intent unless explicitly changed
+            if continuing_booking and not parsed_response.get("intent") in ['cancel_booking', 'check_booking', 'modify_booking']:
+                state.intent = "make_booking"
+            else:
+                state.intent = parsed_response.get("intent", "general_inquiry")
             
             # Clean and validate parameters
             raw_params = parsed_response.get("parameters", {})
@@ -71,11 +84,18 @@ def classify_intent(state: AgentState) -> AgentState:
                                 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
                                 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
                             }
-                            if str(value).lower() in number_words:
-                                state.parameters[key] = number_words[str(value).lower()]
+                            value_str = str(value).lower().strip()
+                            if value_str in number_words:
+                                state.parameters[key] = number_words[value_str]
                             else:
-                                state.parameters[key] = int(value)
+                                # Try to extract number from text like "for 4 people" or "4"
+                                number_match = re.search(r'\d+', str(value))
+                                if number_match:
+                                    state.parameters[key] = int(number_match.group())
+                                else:
+                                    state.parameters[key] = int(value)
                         except (ValueError, TypeError):
+                            print(f"Could not parse party_size: {value}")
                             continue  # Skip invalid party sizes
                     else:
                         state.parameters[key] = str(value).strip()
@@ -87,13 +107,21 @@ def classify_intent(state: AgentState) -> AgentState:
             print(f"Extracted parameters: {state.parameters}")
         else:
             print("Failed to parse JSON response, using fallback")
-            state.intent = "general_inquiry"
+            # If we're continuing a booking, maintain that intent
+            if continuing_booking:
+                state.intent = "make_booking"
+            else:
+                state.intent = "general_inquiry"
             state.needs_clarification = True
             state.clarification_message = "I'm sorry, I had trouble understanding that. Could you please rephrase your request?"
             
     except Exception as e:
         print(f"Error in intent classification: {e}")
-        state.intent = "general_inquiry"
+        # If we're continuing a booking, maintain that intent
+        if continuing_booking:
+            state.intent = "make_booking"
+        else:
+            state.intent = "general_inquiry"
         state.needs_clarification = True
         state.clarification_message = "I encountered an error processing your request. Could you please try again?"
     
@@ -101,12 +129,17 @@ def classify_intent(state: AgentState) -> AgentState:
 
 def process_parameters(state: AgentState) -> AgentState:
     print("--- Node: Process Parameters ---")
+    print(f"Current booking context: {state.booking_context}")
+    print(f"New parameters: {state.parameters}")
     
     # Update booking context with new valid parameters
     if state.parameters:
         for key, value in state.parameters.items():
-            if value is not None and str(value).strip():  # Only add non-empty values
+            if value is not None and str(value).strip() not in ["", "null", "None"]:
+                print(f"Adding {key}: {value} to booking context")
                 state.booking_context[key] = value
+    
+    print(f"Updated booking context: {state.booking_context}")
     
     # Process and validate date
     if state.booking_context.get('date'):
@@ -114,6 +147,7 @@ def process_parameters(state: AgentState) -> AgentState:
         parsed_date = parse_natural_date(raw_date)
         if parsed_date:
             state.booking_context['date'] = parsed_date
+            print(f"Parsed date: {parsed_date}")
         else:
             state.needs_clarification = True
             state.clarification_message = f"I couldn't understand the date '{raw_date}'. Could you provide it in YYYY-MM-DD format or use terms like 'today', 'tomorrow', or 'next Friday'?"
@@ -122,11 +156,16 @@ def process_parameters(state: AgentState) -> AgentState:
     # Validate time format if provided
     if state.booking_context.get('time'):
         time_str = str(state.booking_context['time'])
-        if not re.match(r'^\d{1,2}:\d{2}$', time_str) and not re.match(r'^\d{1,2}(am|pm)$', time_str.lower()):
+        # Check if time is in valid format
+        time_pattern1 = re.compile(r'^\d{1,2}:\d{2}$')
+        time_pattern2 = re.compile(r'^\d{1,2}(am|pm)$', re.IGNORECASE)
+        
+        if not time_pattern1.match(time_str) and not time_pattern2.match(time_str):
             # Try to convert common formats
             converted_time = convert_time_format(time_str)
             if converted_time:
                 state.booking_context['time'] = converted_time
+                print(f"Converted time: {converted_time}")
             else:
                 state.needs_clarification = True
                 state.clarification_message = f"I couldn't understand the time '{time_str}'. Could you provide it in HH:MM format (like 19:30) or with AM/PM (like 7:30 PM)?"
@@ -191,6 +230,9 @@ def check_required_parameters(state: AgentState) -> AgentState:
     intent = state.intent
     context = state.booking_context
     
+    print(f"Checking required parameters for intent: {intent}")
+    print(f"Available context: {context}")
+    
     missing_params = []
     
     if intent == "check_availability":
@@ -200,28 +242,37 @@ def check_required_parameters(state: AgentState) -> AgentState:
             missing_params.append("number of people")
     
     elif intent == "make_booking":
-        required = ["date", "time", "party_size", "customer_name", "phone"]
-        for param in required:
-            if not context.get(param):
-                missing_params.append({
-                    "date": "date",
-                    "time": "time", 
-                    "party_size": "number of people",
-                    "customer_name": "your name",
-                    "phone": "phone number"
-                }.get(param, param))
+        # Check each required parameter individually
+        required_fields = {
+            "date": "date",
+            "time": "time", 
+            "party_size": "number of people",
+            "customer_name": "your name",
+            "phone": "phone number"
+        }
+        
+        for field, description in required_fields.items():
+            if not context.get(field):
+                missing_params.append(description)
+                print(f"Missing required field: {field} ({description})")
     
     elif intent in ["check_booking", "cancel_booking", "modify_booking"]:
         if not context.get("booking_reference"):
             missing_params.append("booking reference")
     
+    print(f"Missing parameters: {missing_params}")
+    
     if missing_params:
         state.needs_clarification = True
         if len(missing_params) == 1:
-            state.clarification_message = f"I need your {missing_params[0]} to help with that. Could you please provide it?"
+            state.clarification_message = f"I need your {missing_params[0]} to complete the booking. Could you please provide it?"
         else:
-            params_str = ", ".join(missing_params[:-1]) + f" and {missing_params[-1]}"
-            state.clarification_message = f"I need the following information: {params_str}. Could you please provide them?"
+            # Only ask for the first missing item to avoid overwhelming the user
+            state.clarification_message = f"I need your {missing_params[0]} to continue. Could you please provide it?"
+    else:
+        print("All required parameters are available!")
+        state.needs_clarification = False
+        state.clarification_message = ""
     
     return state
 

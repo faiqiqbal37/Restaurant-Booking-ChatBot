@@ -60,11 +60,7 @@ with st.sidebar:
     - ❌ Cancel bookings
     - ❓ General restaurant questions
     
-    **Example phrases:**
-    - "Book a table for 4 tomorrow at 7pm"
-    - "Check availability this weekend"
-    - "What's my booking reference ABC123?"
-    - "Cancel my reservation"
+
     """)
     
     # Debug section (expandable)
@@ -86,45 +82,45 @@ if "state" not in st.session_state:
 if "show_context" not in st.session_state:
     st.session_state.show_context = True
 
-# Show current booking context if active
-if (st.session_state.state.booking_context and 
-    st.session_state.show_context and
-    any(st.session_state.state.booking_context.values())):
+# # Show current booking context if active
+# if (st.session_state.state.booking_context and 
+#     st.session_state.show_context and
+#     any(st.session_state.state.booking_context.values())):
     
-    st.markdown("### 📋 Current Booking Information")
+#     st.markdown("### 📋 Current Booking Information")
     
-    context = st.session_state.state.booking_context
-    context_display = []
+#     context = st.session_state.state.booking_context
+#     context_display = []
     
-    if context.get('date'):
-        context_display.append(f"**Date:** {context['date']}")
-    if context.get('time'):
-        context_display.append(f"**Time:** {context['time']}")
-    if context.get('party_size'):
-        context_display.append(f"**Party Size:** {context['party_size']} people")
-    if context.get('customer_name'):
-        context_display.append(f"**Name:** {context['customer_name']}")
-    if context.get('phone'):
-        context_display.append(f"**Phone:** {context['phone']}")
-    if context.get('booking_reference'):
-        context_display.append(f"**Reference:** {context['booking_reference']}")
+#     if context.get('date'):
+#         context_display.append(f"**Date:** {context['date']}")
+#     if context.get('time'):
+#         context_display.append(f"**Time:** {context['time']}")
+#     if context.get('party_size'):
+#         context_display.append(f"**Party Size:** {context['party_size']} people")
+#     if context.get('customer_name'):
+#         context_display.append(f"**Name:** {context['customer_name']}")
+#     if context.get('phone'):
+#         context_display.append(f"**Phone:** {context['phone']}")
+#     if context.get('booking_reference'):
+#         context_display.append(f"**Reference:** {context['booking_reference']}")
     
-    if context_display:
-        st.markdown('<div class="booking-context">', unsafe_allow_html=True)
-        st.markdown(" | ".join(context_display))
+#     if context_display:
+#         st.markdown('<div class="booking-context">', unsafe_allow_html=True)
+#         st.markdown(" | ".join(context_display))
         
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if st.button("Clear Context", key="clear_context"):
-                st.session_state.state.booking_context = {}
-                st.rerun()
-        with col2:
-            st.session_state.show_context = st.checkbox(
-                "Show booking context", 
-                value=st.session_state.show_context
-            )
+#         col1, col2 = st.columns([1, 4])
+#         with col1:
+#             if st.button("Clear Context", key="clear_context"):
+#                 st.session_state.state.booking_context = {}
+#                 st.rerun()
+#         with col2:
+#             st.session_state.show_context = st.checkbox(
+#                 "Show booking context", 
+#                 value=st.session_state.show_context
+#             )
         
-        st.markdown('</div>', unsafe_allow_html=True)
+#         st.markdown('</div>', unsafe_allow_html=True)
 
 # Main chat interface
 st.markdown("### 💬 Chat")
