@@ -13,36 +13,46 @@ Current User Message: "{user_message}"
 
 INTENT ANALYSIS RULES:
 
-1. **Context Awareness**: If the user is continuing a previous conversation (booking context exists), their message likely provides missing information for the ongoing operation.
+1. **Priority Order**: Always classify based on the MOST SPECIFIC intent in the user's message:
+   - Availability checking takes precedence over booking
+   - Specific booking operations (cancel, modify, check) take precedence over general booking
+   
+2. **Context Awareness**: Only use booking context to continue an EXISTING booking operation, not to override explicit new requests.
 
-2. **Parameter Extraction**: Extract ALL parameters mentioned, even if they seem to repeat information. The system will merge them appropriately.
+3. **Clear Intent Signals**: Look for explicit keywords that clearly indicate the user's primary intent.
 
-3. **Intent Persistence**: If there's an active booking context and the user provides additional information (like name, phone, party size), keep the same intent unless they explicitly change topics.
+INTENT DEFINITIONS (in priority order):
 
-INTENT DEFINITIONS:
-1. check_availability: User wants to see available times/dates for booking
-   - Triggers: "check availability", "what times are available", "do you have tables", "are you open"
+1. **check_availability**: User wants to see available times/dates for booking
+   - PRIMARY TRIGGERS: "check availability", "what times are available", "available", "availability", "free tables", "do you have tables", "what's available", "any tables free"
+   - Even if booking context exists, if user asks about availability, classify as check_availability
    - Needs: date, party_size
 
-2. make_booking: User wants to create a new reservation
-   - Triggers: "book a table", "make a reservation", "I'd like to book", "reserve a table"
-   - Also: When continuing a booking and providing missing details
-   - Needs: date, time, party_size, customer_name, phone
-
-3. check_booking: User wants to see existing booking details
-   - Triggers: "check my booking", "my reservation", "booking details", with a reference
+2. **cancel_booking**: User wants to cancel a reservation
+   - TRIGGERS: "cancel my booking", "cancel reservation", "cancel my table"
    - Needs: booking_reference
 
-4. modify_booking: User wants to change an existing reservation
-   - Triggers: "change my booking", "modify reservation", "reschedule", "update my booking"
+3. **modify_booking**: User wants to change an existing reservation
+   - TRIGGERS: "change my booking", "modify reservation", "reschedule", "update my booking"
    - Needs: booking_reference, plus what to change (new_date, new_time, new_party_size)
 
-5. cancel_booking: User wants to cancel a reservation
-   - Triggers: "cancel my booking", "cancel reservation", "cancel my table"
+4. **check_booking**: User wants to see existing booking details
+   - TRIGGERS: "check my booking", "my reservation", "booking details", with a reference
    - Needs: booking_reference
 
-6. general_inquiry: Questions about the restaurant, menu, location, etc.
-   - Triggers: anything not related to specific booking operations
+5. **make_booking**: User wants to create a new reservation
+   - TRIGGERS: "book a table", "make a reservation", "I'd like to book", "reserve a table"
+   - Also: When continuing a booking and providing missing details (but NOT when asking about availability)
+   - Needs: date, time, party_size, customer_name, phone
+
+6. **general_inquiry**: Questions about the restaurant, menu, location, etc.
+   - TRIGGERS: anything not related to specific booking operations
+
+IMPORTANT CLASSIFICATION RULES:
+- If user says "check availability" or similar, ALWAYS classify as check_availability, regardless of booking context
+- If user says "what times are available" or similar, ALWAYS classify as check_availability
+- Only continue make_booking if user is providing missing booking details (name, phone, etc.) without asking about availability
+- Be very specific: "book a table" = make_booking, but "what tables are available" = check_availability
 
 PARAMETER EXTRACTION RULES:
 - date: Extract dates in any format (today, tomorrow, next Friday, 2024-12-25, etc.)
@@ -53,17 +63,12 @@ PARAMETER EXTRACTION RULES:
 - booking_reference: Extract reference codes/numbers when mentioned
 - For modify_booking: look for new_date, new_time, new_party_size (what they want to change TO)
 
-SPECIAL CASES:
-- If booking context exists and user provides info like "for 4 people, my name is John", extract party_size=4, customer_name="John"
-- Numbers can be digits (4) or words (four)
-- Names can be first only ("John") or full ("John Smith")
-- Phone numbers in any format: 123-456-7890, (123) 456-7890, 1234567890
-
-IMPORTANT: 
-- Extract parameters even if they seem redundant - the system handles duplicates
-- Be liberal in extraction - better to extract too much than too little
-- If continuing a booking conversation, maintain make_booking intent unless explicitly changed
-- Look for ALL parameters in the message, not just missing ones
+EXAMPLES:
+- "What times are available for 4 people tomorrow?" → check_availability
+- "Are you free tonight for 2?" → check_availability  
+- "Book a table for tomorrow 7pm" → make_booking
+- "My name is John Smith, phone 123-456-7890" (with booking context) → make_booking
+- "Check availability for Saturday" → check_availability (NOT make_booking, even with context)
 
 OUTPUT FORMAT (JSON only, no other text):
 {{

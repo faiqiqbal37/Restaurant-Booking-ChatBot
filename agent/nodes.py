@@ -42,10 +42,14 @@ def classify_intent(state: AgentState) -> AgentState:
         context_str += f"{msg['role'].title()}: {msg['content']}\n"
     
     # Check if we're continuing an existing booking conversation
-    continuing_booking = bool(state.booking_context and 
-                             any(state.booking_context.values()) and
-                             not any(keyword in state.user_message.lower() 
-                                   for keyword in ['cancel', 'check my booking', 'modify', 'change']))
+    # FIXED: Only consider it continuing if we're actually in a booking flow AND user isn't asking for something else
+    continuing_booking = bool(
+        state.booking_context and 
+        any(state.booking_context.values()) and
+        not any(keyword in state.user_message.lower() 
+               for keyword in ['cancel', 'check my booking', 'modify', 'change', 
+                              'available', 'availability', 'check availability', 'what times'])
+    )
     
     print(f"Continuing booking: {continuing_booking}")
     print(f"Current booking context: {state.booking_context}")
@@ -63,11 +67,16 @@ def classify_intent(state: AgentState) -> AgentState:
         parsed_response = extract_json(response_text)
         
         if parsed_response:
-            # If we're continuing a booking, maintain the make_booking intent unless explicitly changed
-            if continuing_booking and not parsed_response.get("intent") in ['cancel_booking', 'check_booking', 'modify_booking']:
+            # FIXED: Let the LLM's intent classification take precedence
+            # Only override if we're truly continuing a booking AND the intent makes sense in that context
+            llm_intent = parsed_response.get("intent", "general_inquiry")
+            
+            if continuing_booking and llm_intent in ['make_booking', 'general_inquiry']:
+                # Only keep make_booking if the LLM also thinks it's booking-related
                 state.intent = "make_booking"
             else:
-                state.intent = parsed_response.get("intent", "general_inquiry")
+                # Trust the LLM's classification for all other cases
+                state.intent = llm_intent
             
             # Clean and validate parameters
             raw_params = parsed_response.get("parameters", {})
@@ -107,26 +116,41 @@ def classify_intent(state: AgentState) -> AgentState:
             print(f"Extracted parameters: {state.parameters}")
         else:
             print("Failed to parse JSON response, using fallback")
-            # If we're continuing a booking, maintain that intent
-            if continuing_booking:
+            # FIXED: For fallback, don't assume continuing booking
+            # Try to determine intent from keywords in the user message
+            user_msg_lower = state.user_message.lower()
+            
+            if any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
+                state.intent = "check_availability"
+            elif any(word in user_msg_lower for word in ['book', 'reserve', 'table', 'reservation']) and continuing_booking:
+                state.intent = "make_booking"
+            elif any(word in user_msg_lower for word in ['cancel']) and 'booking' in user_msg_lower:
+                state.intent = "cancel_booking"
+            elif continuing_booking:
                 state.intent = "make_booking"
             else:
                 state.intent = "general_inquiry"
+                
             state.needs_clarification = True
             state.clarification_message = "I'm sorry, I had trouble understanding that. Could you please rephrase your request?"
             
     except Exception as e:
         print(f"Error in intent classification: {e}")
-        # If we're continuing a booking, maintain that intent
-        if continuing_booking:
+        # FIXED: Same logic for error handling
+        user_msg_lower = state.user_message.lower()
+        
+        if any(word in user_msg_lower for word in ['available', 'availability', 'check availability', 'what times', 'free tables']):
+            state.intent = "check_availability"
+        elif continuing_booking:
             state.intent = "make_booking"
         else:
             state.intent = "general_inquiry"
+            
         state.needs_clarification = True
         state.clarification_message = "I encountered an error processing your request. Could you please try again?"
     
     return state
-
+    
 def process_parameters(state: AgentState) -> AgentState:
     print("--- Node: Process Parameters ---")
     print(f"Current booking context: {state.booking_context}")
