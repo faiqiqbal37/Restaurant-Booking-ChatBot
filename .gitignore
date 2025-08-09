@@ -1,0 +1,8 @@
+# Ignore env folder in root
+/env/
+
+# Ignore env folder in server
+/server/env/
+
+# Ignore restaurant_booking.db in server
+/server/restaurant_booking.db

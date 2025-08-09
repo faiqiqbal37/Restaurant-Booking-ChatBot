@@ -2,18 +2,28 @@ from langgraph.graph import StateGraph, END
 from agent.state import AgentState
 from agent.nodes import classify_intent, process_parameters, execute_api_call, generate_response
 
-def should_continue(state: AgentState) -> str:
-    """Router to decide the next step."""
+def should_continue_after_parameters(state: AgentState) -> str:
+    """Router to decide the next step after parameter processing."""
+    print(f"Router: intent={state.intent}, needs_clarification={state.needs_clarification}")
+    
+    # If we need clarification, go straight to response generation
     if state.needs_clarification:
         return "generate_response"
-    if state.intent and state.intent != "general_inquiry":
+    
+    # If it's a general inquiry, no API call needed
+    if state.intent == "general_inquiry":
+        return "generate_response"
+    
+    # For all other intents that require API calls
+    if state.intent in ["check_availability", "make_booking", "check_booking", 
+                       "cancel_booking", "modify_booking"]:
         return "execute_api_call"
+    
+    # Default to response generation
     return "generate_response"
 
 def after_api_call(state: AgentState) -> str:
-    """Router after an API call to decide if we need more info or can generate a final response."""
-    if state.needs_clarification:
-        return "generate_response"
+    """Router after an API call - always go to response generation."""
     return "generate_response"
     
 def build_graph():
@@ -28,18 +38,21 @@ def build_graph():
 
     # Define edges
     workflow.set_entry_point("classify_intent")
+    
+    # Always go from intent classification to parameter processing
     workflow.add_edge("classify_intent", "process_parameters")
     
-    # FIX: Changed to add_conditional_edges (plural)
+    # Conditional routing after parameter processing
     workflow.add_conditional_edges(
         "process_parameters",
-        should_continue,
+        should_continue_after_parameters,
         {
             "execute_api_call": "execute_api_call",
             "generate_response": "generate_response"
         }
     )
-    # FIX: Changed to add_conditional_edges (plural)
+    
+    # After API call, always generate response
     workflow.add_conditional_edges(
         "execute_api_call",
         after_api_call,
@@ -47,6 +60,8 @@ def build_graph():
             "generate_response": "generate_response"
         }
     )
+    
+    # End after generating response
     workflow.add_edge("generate_response", END)
 
     return workflow.compile()
