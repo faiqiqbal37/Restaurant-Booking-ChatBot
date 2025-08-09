@@ -49,20 +49,6 @@ The agent maintains context across multiple conversation turns, so customers don
                        └──────────────────┘
 ```
 
-### Agent Workflow
-
-```mermaid
-graph TD
-    A[User Input] --> B[Classify Intent]
-    B --> C[Process Parameters]
-    C --> D{Needs Clarification?}
-    D -->|Yes| E[Generate Response]
-    D -->|No| F{API Call Required?}
-    F -->|Yes| G[Execute API Call]
-    F -->|No| E
-    G --> E
-    E --> H[End]
-```
 
 ## 🛠️ Technical Stack
 
@@ -95,8 +81,7 @@ graph TD
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/restaurant-booking-agent.git
-cd restaurant-booking-agent
+git clone https://github.com/faiqiqbal37/Restaurant-Booking-ChatBot
 ```
 
 ### 2. Install Dependencies in the Root Directory as well as the Server Directory
