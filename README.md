@@ -284,7 +284,7 @@ python debug/test_intents.py
 
 ## 🙏 Acknowledgments
 
-- **LocalLabs** for providing the technical assessment opportunity
+- **Locai Labs** for providing the technical assessment opportunity
 - **AppellaAI** for the mock API server at: https://github.com/AppellaAI/Restaurant-Booking-Mock-API-Server
 - **LangChain Team** for the excellent LangGraph framework  
 - **Ollama Team** for making local LLM inference accessible
@@ -300,5 +300,5 @@ If you encounter any issues or have questions:
 
 ---
 
-**Built as part of LocalLabs Technical Assessment**  
+**Built as part of Locai Labs Technical Assessment**  
 *Restaurant Booking Agent for TheHungryUnicorn*
